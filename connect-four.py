@@ -7,7 +7,7 @@ import copy
 import enum
 import os
 
-MAX_DEPTH = 5
+MAX_DEPTH = 8
 # DIRECTIONS = [		\
 # 	( 0,  1),		\
 # 	( 1,  1),		\
@@ -91,47 +91,67 @@ class board:
 		self.moves += 1
 
 	# Helper function for the static state evaluation
-	def evaluate_row(self, arr):
+	def evaluate_arr(self, arr):
 		redScore = 0
 		blueScore = 0
 
-		# Intermediate score
-		score = 0
-		multiplier = 1
-		continuous = 0
-		prevToken = piece.NONE
-
-		max = len(arr)
-		shift = len(arr) / 2
+		# Intermediate values
+		indexes = []
+		lastindex = 0
+		matchlen = 0
+		prevtoken = piece.RED		# Should be only red or blue, so assume RED
 
 		# Iterate input array
 		for x, token in enumerate(arr):
 			if token == piece.NONE:
-				multipler = 1
-				# continuous = 0 intentionally left out here
+				matchlen = 0
 				continue
 
-			# For every new token, add the current score and continue
-			if token != prevToken:
-				if prevToken == piece.RED: redScore += score
-				elif prevToken == piece.BLUE: blueScore += score
-				prevToken = token
-				score = 0
-				mulitplier = 1
-				continuous = 0
+			# Opposite color token
+			if token != prevtoken:
+				# Determine value of match
+				length = x - lastindex
 
-			# Token is same as previous now
-			continuous += 1
-			if continuous <= 4:
-				locVal = max - abs(x - shift) - shift + 1
-				score = locVal + score * multiplier
-				multiplier += 1
+				# Update values
+				lastindex = x
+				matchlen = 0
 
-			else: score += 3
+				# Maximum local value is 0 if length < 4 (because len - 3)
+				if length >= 4:
+					maxval = 0
+					for index in indexes:
+						distance = min(index, length - index - 1)
+						val = min(distance, length - 3)
+						maxval = max(val, maxval)
 
-		# Final update of remaining string
-		if prevToken == piece.RED: redScore += score
-		elif prevToken == piece.BLUE: blueScore += score
+					if prevtoken == piece.RED: redScore += len(indexes) * maxval
+					else: blueScore += len(indexes) * maxval		# If first token in blue, len(indexes will be 0)
+
+				indexes = []
+				# Skip remaining tokens if no match possible
+				if (len(arr) - x) < 4: return redScore, blueScore
+
+			# Check if match is made
+			matchlen += 1
+			if matchlen >= 4:
+				if token == piece.RED: return 24, 0
+				else: return 0, 24
+
+			indexes.append(x - lastindex)
+			prevtoken = token
+
+		# Final evaluation
+		length = len(arr) - lastindex
+		if length >= 4:
+			maxval = 0
+			for index in indexes:
+				distance = min(index, length - index - 1)
+				val = min(distance + 1, length - 3)
+				maxval = max(val, maxval)
+				# print(f"length: {length}\ndistance: {distance}\nval: {val}\nmaxval: {maxval}")
+
+			if prevtoken == piece.RED: redScore += len(indexes) * maxval
+			else: blueScore += len(indexes) * maxval
 
 		return redScore, blueScore
 
@@ -153,14 +173,63 @@ class board:
 
 				row.append(token)
 
-			score = self.evaluate_row(row)
+			# print(row)
+			score = self.evaluate_arr(row)
+			redScore += score[0]
+			blueScore += score[1]
+
+		# Check for matches vertically
+		for row in self.data:
+			rowcp = copy.copy(row)
+			for x in range(self.height - len(row)): rowcp.append(piece.NONE)
+
+			score = self.evaluate_arr(rowcp)
+			redScore += score[0]
+			blueScore += score[1]
+
+		# Check matches diagonally (up-left)
+		for x in range(3, 9):
+			row = []
+
+			for y in range(self.height):
+				xi = x - y
+				if xi < 0: break
+				if xi >= self.width: continue
+
+				token = piece.NONE
+				try: token = self.data[xi][y]
+				except IndexError: pass
+
+				row.append(token)
+
+			score = self.evaluate_arr(row)
+			redScore += score[0]
+			blueScore += score[1]
+
+		# Check matches diagonally (up-right)
+		for x in range(-2, 4):
+			row = []
+
+			for y in range(self.height):
+				xi = x + y
+				if xi < 0: continue
+				if xi >= self.width: break
+
+				token = piece.NONE
+				try: token = self.data[xi][y]
+				except IndexError: pass
+
+				row.append(token)
+
+			score = self.evaluate_arr(row)
 			redScore += score[0]
 			blueScore += score[1]
 
 		return redScore - blueScore
 
 	# Evaluate the state of the board
-	def evaluate_old(self):
+	'''
+	def evaluate(self):
 		redScore = 0
 		blueScore = 0
 
@@ -250,7 +319,7 @@ class board:
 				if token == piece.RED: redScore += score
 				elif token == piece.BLUE: blueScore += score
 
-		return redScore - blueScore
+		return redScore - blueScore'''
 
 	def __str__(self):
 		# Top bar
@@ -315,7 +384,7 @@ class tree:
 
 	# Perform a minimax evaluation to determine the next best move
 	# Returns FALSE if game end
-	def advance(self):
+	def advance(self, debug = False):
 		global MAX_DEPTH
 
 		# Do not advance the board if no further progress can be made
@@ -329,12 +398,13 @@ class tree:
 		# Perform minimax evaluation on each child
 		bestEval = float('-inf')	# Value of best move so far
 		bestIndex = 0				# Index of best move so far
-		maxPlayer = True if (self.board.player == 0) else False
-
 		print(f" -- MOVE {self.board.moves + 1} EVALUATION --")
+
+		maxPlayer = True if (self.board.player == 0) else False
 		if not maxPlayer: bestEval *= -1
 		for x, child in enumerate(self.children):
-			eval = child.evaluate(MAX_DEPTH - 1, float('-inf'), float('inf'), not maxPlayer)
+			if debug: eval = child.board.evaluate()
+			else: eval = child.evaluate(MAX_DEPTH - 1, float('-inf'), float('inf'), not maxPlayer)
 
 			# Debug output
 			print(f"Column: {x} | Evaluation: {eval}")
@@ -388,19 +458,24 @@ if __name__ == "__main__":
 	print("Welcome to Connect-4!")
 
 	init = board(7, 6)
-	# init.data[0].append(piece.RED)
-	init.data[1].append(piece.RED)
-	init.data[2].append(piece.RED)
-	init.data[3].append(piece.RED)
+	# init.data[0].append(piece.BLUE)
+	# init.data[1].append(piece.BLUE)
+	# init.data[2].append(piece.RED)
+	# init.data[3].append(piece.RED)
 	# init.data[4].append(piece.RED)
-	# init.data[5].append(piece.RED)
-	print(init)
-	exit()
+	# init.data[0].append(piece.BLUE)
+	# init.data[0].append(piece.RED)
+	# init.data[0].append(piece.RED)
+	# init.data[0].append(piece.RED)
+	# init.data[6].append(piece.RED)
+	# print(init)
+	# exit()
 
+	# Tree type used to advance the board state
 	game = tree(init)
 	print(game.board)
 
 	while True:
 		input("Press any key to continue...\n")
-		game.advance()
+		game.advance(False)
 		print(game.board)
