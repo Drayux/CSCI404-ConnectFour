@@ -7,13 +7,7 @@ import copy
 import enum
 import os
 
-MAX_DEPTH = 8
-# DIRECTIONS = [		\
-# 	( 0,  1),		\
-# 	( 1,  1),		\
-# 	( 1,  0),		\
-# 	( 1, -1)
-# ]
+MAX_DEPTH = 4
 
 # Utility class for pretty colors in the terminal output
 class colors:
@@ -54,7 +48,7 @@ class board:
 
 		# Board state : Saved as
 		self.data = [[] for i in range(x)]
-		self.log = ""
+		# self.log = ""
 
 	def copy(self):
 		new = board(self.width, self.height)
@@ -64,6 +58,13 @@ class board:
 		new.data = copy.deepcopy(self.data)
 
 		return new
+
+	def parse(self, path):
+		# Project requirements specify a questionable format
+		# Consequently, this is just hard-coded
+		data = [[] for i in range(7)]
+		with open(path, "r") as inf:
+			pass
 
 	def log(self, message: str):
 		self.log += f"{message}\n"
@@ -348,7 +349,7 @@ class board:
 
 		ret += "\n|"
 		for i in range(self.width):
-			ret += f" {i} |"
+			ret += f" {i + 1} |"
 
 		ret += f"\n\nMoves: {self.moves}"
 		ret += f"\nTurn: {piece(self.player + 1).name}"
@@ -379,7 +380,7 @@ class tree:
 		for i in range(self.board.width):
 			new = self.board.copy()
 			try: new.place_token(i)
-			except IndexError: continue
+			except IndexError: new = None
 			self.children.append(tree(new))
 
 	# Perform a minimax evaluation to determine the next best move
@@ -403,11 +404,12 @@ class tree:
 		maxPlayer = True if (self.board.player == 0) else False
 		if not maxPlayer: bestEval *= -1
 		for x, child in enumerate(self.children):
+			if child.board is None: continue
 			if debug: eval = child.board.evaluate()
 			else: eval = child.evaluate(MAX_DEPTH - 1, float('-inf'), float('inf'), not maxPlayer)
 
 			# Debug output
-			print(f"Column: {x} | Evaluation: {eval}")
+			print(f"Column: {x + 1} | Evaluation: {eval}")
 
 			if maxPlayer and eval > bestEval:
 				bestEval = eval
@@ -418,8 +420,15 @@ class tree:
 				bestIndex = x
 		print()
 
+		self.inherit(bestIndex)
+		return True
+
+	def inherit(self, index):
 		# Advance the board
-		new = self.children[bestIndex]
+		try: new = self.children[index]
+		except IndexError: return False
+		if new.board is None: return False
+
 		self.board = new.board
 		self.children = new.children
 		return True
@@ -435,6 +444,7 @@ class tree:
 		if maxPlayer:
 			maxEval = float('-inf')
 			for child in self.children:
+				if child.board is None: continue
 				eval = child.evaluate(depth - 1, alpha, beta, False)
 				maxEval = max(maxEval, eval)
 				alpha = max(alpha, eval)
@@ -445,11 +455,25 @@ class tree:
 		else:
 			minEval = float('inf')
 			for child in self.children:
+				if child.board is None: continue
 				eval = child.evaluate(depth - 1, alpha, beta, True)
 				minEval = min(minEval, eval)
 				beta = min(beta, eval)
 				if beta <= alpha: break
 			return minEval
+
+	def move(self):
+		while (True):
+			index = input("Select a column: ")
+			try: index = int(index) - 1
+			except ValueError:
+				print("ERROR: Invalid entry.")
+				continue
+
+			if not self.inherit(index):
+				print("ERROR: Invalid move.")
+				continue
+			break
 
 
 if __name__ == "__main__":
@@ -458,24 +482,13 @@ if __name__ == "__main__":
 	print("Welcome to Connect-4!")
 
 	init = board(7, 6)
-	# init.data[0].append(piece.BLUE)
-	# init.data[1].append(piece.BLUE)
-	# init.data[2].append(piece.RED)
-	# init.data[3].append(piece.RED)
-	# init.data[4].append(piece.RED)
-	# init.data[0].append(piece.BLUE)
-	# init.data[0].append(piece.RED)
-	# init.data[0].append(piece.RED)
-	# init.data[0].append(piece.RED)
-	# init.data[6].append(piece.RED)
-	# print(init)
-	# exit()
-
-	# Tree type used to advance the board state
-	game = tree(init)
+	game = tree(init)			# Tree type used to advance the board state
 	print(game.board)
 
 	while True:
-		input("Press any key to continue...\n")
+		input("Press enter to continue...\n")
 		game.advance(False)
 		print(game.board)
+
+		# game.move()
+		# print(game.board)
