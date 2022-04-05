@@ -6,8 +6,9 @@
 import copy
 import enum
 import os
+import sys
 
-MAX_DEPTH = 4
+MAX_DEPTH = 5
 
 # Utility class for pretty colors in the terminal output
 class colors:
@@ -62,9 +63,49 @@ class board:
 	def parse(self, path):
 		# Project requirements specify a questionable format
 		# Consequently, this is just hard-coded
+		self.data = [[] for i in range(7)]
 		data = [[] for i in range(7)]
+		moves = 0
+
 		with open(path, "r") as inf:
-			pass
+			for line in [l.strip() for l in inf]:
+				if len(line) == 1:
+					player = int(line[0]) - 1
+					self.player = player
+					break
+
+				for i in range(7): data[i].append(line[i])
+
+		for x, arr in enumerate(data):
+			arr.reverse()
+			for ele in arr:
+				if ele == '0': continue
+				self.data[x].append(piece.RED if ele == '1' else piece.BLUE)
+				moves += 1
+
+		self.moves = moves
+
+	def output(self, path):
+		# Same as parse above^^
+		# Except writes to a file instead of reads from it
+		with open(path, "w") as outf:
+			for i in range(6):
+				line = ""
+				y = 6 - i - 1
+				for x in range(7):
+					# print(f"x: {x}; y: {y}; len: {len(self.data[x])}")
+					if len(self.data[x]) <= y: line += "0"
+					elif self.data[x][y] == piece.RED: line += "1"
+					elif self.data[x][y] == piece.BLUE: line += "2"
+					else: line += "0"
+
+				# Write the board data
+				outf.write(line)
+				outf.write("\n")
+
+			# Write the active player
+			outf.write(str(self.player + 1))
+			outf.write("\n")
 
 	def log(self, message: str):
 		self.log += f"{message}\n"
@@ -322,6 +363,23 @@ class board:
 
 		return redScore - blueScore'''
 
+	# Calculates and returns the current score
+	def score(self):
+		redScore = 0
+		blueScore = 0
+
+		# UP, UP-RIGHT, RIGHT, DOWN-RIGHT
+		directions = [		\
+			( 0,  1),		\
+			( 1,  1),		\
+			( 1,  0),		\
+			( 1, -1)		\
+		]
+
+		# for x in range(self.width)
+		# raise NotImplementedError("score calculation")
+		return -1, -1
+
 	def __str__(self):
 		# Top bar
 		ret = " ___"
@@ -353,7 +411,11 @@ class board:
 
 		ret += f"\n\nMoves: {self.moves}"
 		ret += f"\nTurn: {piece(self.player + 1).name}"
-		ret += f"\nEvaluation: {self.evaluate()}\n"
+		ret += f"\nEvaluation: {self.evaluate()}"
+
+		score = self.score()
+		ret += f"\nScore: {score[0]} - {score[1]}  (RED / BLUE)\n"
+
 		return ret
 
 	def __repr__(self):
@@ -384,14 +446,14 @@ class tree:
 			self.children.append(tree(new))
 
 	# Perform a minimax evaluation to determine the next best move
-	# Returns FALSE if game end
+	# Raises StopIteration if game end
 	def advance(self, debug = False):
 		global MAX_DEPTH
 
 		# Do not advance the board if no further progress can be made
 		if self.board.moves >= self.board.final:
 			print("WARNING: End of game (no further moves)")
-			return False
+			raise StopIteration
 
 		# Ensure that the tree has children to evaluate
 		self.procreate()
@@ -418,10 +480,11 @@ class tree:
 			elif not maxPlayer and eval < bestEval:
 				bestEval = eval
 				bestIndex = x
-		print()
+
+		print(f"\nComputer selected move: {bestIndex}\n")
 
 		self.inherit(bestIndex)
-		return True
+		if not self.board.moves < self.board.final: raise StopIteration
 
 	def inherit(self, index):
 		# Advance the board
@@ -474,21 +537,93 @@ class tree:
 				print("ERROR: Invalid move.")
 				continue
 			break
+		if not self.board.moves < self.board.final: raise StopIteration
 
 
 if __name__ == "__main__":
-	# Workaround for ANSI colors being weird
-	os.system("")
-	print("Welcome to Connect-4!")
+	if len(sys.argv) < 4 or (sys.argv[1] != "interactive" and sys.argv[1] != "one-move"):
+		print(sys.argv)
+		print(f"USAGE (interactive mode): {sys.argv[0]} interactive <input file> <computer-next/human-next> <depth>")
+		print(f"      or (one-move mode): {sys.argv[0]} one-move <input file> <output file> <depth>")
+		exit(-1)
+
+	# Variables for program arguments
+	mode = (0 if sys.argv[1] == "interactive" else 1)	# 0 -> interactive; 1 -> one-move
+	inpath = sys.argv[2]
+	MAX_DEPTH = int(sys.argv[4])
+
+	outpath = None
+	player = None
+
+	if mode == 1: outpath = sys.argv[3]
+	else:
+		if sys.argv[3] == "computer-next": player = 0
+		elif sys.argv[3] == "human-next": player = 1
+		else:
+			print("ERROR: Please specify either 'computer-next' or 'human-next' for interactive mode")
+			exit(-2)
+
+	os.system("")				# Workaround for ANSI colors being weird
+	print("Welcome to Connect-4!\n")
 
 	init = board(7, 6)
 	game = tree(init)			# Tree type used to advance the board state
-	print(game.board)
 
-	while True:
-		input("Press enter to continue...\n")
-		game.advance(False)
+	try: init.parse(inpath)
+	except FileNotFoundError:
+		print("NOTE: Input file does not exist.")
+		inpath = None
+
+	# -- Perform based on the specified mode --
+	# ONE-MOVE mode
+	if mode == 1:
+		print(f"CURRENT POSITION ({'NONE' if inpath is None else inpath}):")
+		print(game.board)
+		input("Press enter to continue...")
+		print("\n")
+
+		game.advance(False)		# False -> Debug mode: OFF
+
+		print("NEW POSITION:")
 		print(game.board)
 
-		# game.move()
-		# print(game.board)
+		game.board.output(outpath)
+		print(f"Board state written to '{outpath}'")
+		exit(0)
+
+	# INTERACTIVE mode
+	else:
+		print(game.board)
+		exit = False
+		human = None
+		if player == 1: human = game.board.player
+		else: human = (game.board.player + 1) % 2
+
+		while not exit:
+			if player == 0:
+				input("Press enter to continue...\n")
+				try: game.advance(False)
+				except StopIteration: exit = True
+
+				print(game.board)
+				game.board.output("computer.txt")
+				print("Board state written to 'computer.txt'")
+
+				player = 1
+
+			else:
+				try: game.move()
+				except StopIteration: exit = True
+
+				print(game.board)
+				game.board.output("human.txt")
+				print("Board state written to 'human.txt'")
+
+				player = 0
+
+		print("End of game!")
+		score = game.board.score()
+
+		if score[0] > score[1]: print(f"Winner is RED ({'Human' if human == 0 else 'Computer'})")
+		elif score[1] > score[0]: print(f"Winner is BLUE ({'Human' if human == 1 else 'Computer'})")
+		else: print("It's a DRAW")
