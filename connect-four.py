@@ -7,6 +7,7 @@ import copy
 import enum
 import os
 import sys
+import time
 
 MAX_DEPTH = 5
 
@@ -124,13 +125,77 @@ class board:
 		if len(arr) >= self.height:
 			raise IndexError(f"Row is full ({x})")
 
-			# Old interface
-			print(colors.RED + f"WARNING: No room left in row {x} for this piece!" + colors.RESET)
-			return
-
 		arr.append(piece(self.player + 1))
 		self.swap_player()
 		self.moves += 1
+
+	# Returns array of arrays corresponding to the board rows
+	# NOTE: All non-empty values here are references!
+	def rows(self):
+		ret = []
+		for y in range(self.height):
+			row = []
+
+			for x in range(self.width):
+				token = piece.NONE
+
+				# If token does not exist, array location is out of bounds
+				try: token = self.data[x][y]
+				except IndexError: pass
+				row.append(token)
+
+			# print(row)
+			ret.append(row)
+		return ret
+
+	# Returns array of arrays corresponding to the board columns
+	# NOTE: All values here are copies!
+	def cols(self):
+		ret = []
+		for arr in self.data:
+			arrcp = copy.copy(arr)
+			for x in range(self.height - len(arr)): arrcp.append(piece.NONE)
+			ret.append(arrcp)
+		return ret
+
+	# Returns array of array corresponding to board diagonals (up-right)
+	# NOTE: Bounds currently hard-coded for board size 7r x 6c
+	def diagRight(self):
+		ret = []
+		for x in range(-2, 4):
+			row = []
+
+			for y in range(self.height):
+				xi = x + y
+				if xi < 0: continue
+				if xi >= self.width: break
+
+				token = piece.NONE
+				try: token = self.data[xi][y]
+				except IndexError: pass
+
+				row.append(token)
+			ret.append(row)
+		return ret
+
+	# Same as above but diagonals up-left
+	def diagLeft(self):
+		ret = []
+		for x in range(3, 9):
+			row = []
+
+			for y in range(self.height):
+				xi = x - y
+				if xi < 0: break
+				if xi >= self.width: continue
+
+				token = piece.NONE
+				try: token = self.data[xi][y]
+				except IndexError: pass
+
+				row.append(token)
+			ret.append(row)
+		return ret
 
 	# Helper function for the static state evaluation
 	def evaluate_arr(self, arr):
@@ -202,68 +267,27 @@ class board:
 		redScore = 0
 		blueScore = 0
 
-		# Check for matches horizontally
-		for y in range(self.height):
-			row = []
-
-			for x in range(self.width):
-				token = piece.NONE
-
-				# If token does not exist, array location is out of bounds
-				try: token = self.data[x][y]
-				except IndexError: pass
-
-				row.append(token)
-
-			# print(row)
-			score = self.evaluate_arr(row)
+		# Check matches horizontally
+		for arr in self.rows():
+			score = self.evaluate_arr(arr)
 			redScore += score[0]
 			blueScore += score[1]
 
-		# Check for matches vertically
-		for row in self.data:
-			rowcp = copy.copy(row)
-			for x in range(self.height - len(row)): rowcp.append(piece.NONE)
-
-			score = self.evaluate_arr(rowcp)
-			redScore += score[0]
-			blueScore += score[1]
-
-		# Check matches diagonally (up-left)
-		for x in range(3, 9):
-			row = []
-
-			for y in range(self.height):
-				xi = x - y
-				if xi < 0: break
-				if xi >= self.width: continue
-
-				token = piece.NONE
-				try: token = self.data[xi][y]
-				except IndexError: pass
-
-				row.append(token)
-
-			score = self.evaluate_arr(row)
+		# Check matches vertically
+		for arr in self.cols():
+			score = self.evaluate_arr(arr)
 			redScore += score[0]
 			blueScore += score[1]
 
 		# Check matches diagonally (up-right)
-		for x in range(-2, 4):
-			row = []
+		for arr in self.diagRight():
+			score = self.evaluate_arr(arr)
+			redScore += score[0]
+			blueScore += score[1]
 
-			for y in range(self.height):
-				xi = x + y
-				if xi < 0: continue
-				if xi >= self.width: break
-
-				token = piece.NONE
-				try: token = self.data[xi][y]
-				except IndexError: pass
-
-				row.append(token)
-
-			score = self.evaluate_arr(row)
+		# Check matches diagonally (up-left)
+		for arr in self.diagLeft():
+			score = self.evaluate_arr(arr)
 			redScore += score[0]
 			blueScore += score[1]
 
@@ -363,22 +387,53 @@ class board:
 
 		return redScore - blueScore'''
 
+	def score_arr(self, arr):
+		if len(arr) < 4: return piece.NONE
+
+		count = 0
+		prevtoken = piece.NONE
+
+		for token in arr:
+			if token != piece.NONE and token == prevtoken:
+				count += 1
+				if count >= 4: return token
+
+			else:
+				count = 1
+				prevtoken = token
+
+		return piece.NONE
+
 	# Calculates and returns the current score
 	def score(self):
 		redScore = 0
 		blueScore = 0
 
-		# UP, UP-RIGHT, RIGHT, DOWN-RIGHT
-		directions = [		\
-			( 0,  1),		\
-			( 1,  1),		\
-			( 1,  0),		\
-			( 1, -1)		\
-		]
+		# Check matches horizontally
+		for arr in self.rows():
+			token = self.score_arr(arr)
+			if token == piece.RED: redScore += 1
+			elif token == piece.BLUE: blueScore += 1
 
-		# for x in range(self.width)
-		# raise NotImplementedError("score calculation")
-		return -1, -1
+		# Check matches vertically
+		for arr in self.cols():
+			token = self.score_arr(arr)
+			if token == piece.RED: redScore += 1
+			elif token == piece.BLUE: blueScore += 1
+
+		# Check matches diagonally (up-right)
+		for arr in self.diagRight():
+			token = self.score_arr(arr)
+			if token == piece.RED: redScore += 1
+			elif token == piece.BLUE: blueScore += 1
+
+		# Check matches diagonally (up-left)
+		for arr in self.diagLeft():
+			token = self.score_arr(arr)
+			if token == piece.RED: redScore += 1
+			elif token == piece.BLUE: blueScore += 1
+
+		return redScore, blueScore
 
 	def __str__(self):
 		# Top bar
@@ -452,8 +507,8 @@ class tree:
 
 		# Do not advance the board if no further progress can be made
 		if self.board.moves >= self.board.final:
-			print("WARNING: End of game (no further moves)")
-			raise StopIteration
+			#print("WARNING: End of game (no further moves)")
+			raise IndexError("End of game (no further moves)")
 
 		# Ensure that the tree has children to evaluate
 		self.procreate()
@@ -465,6 +520,9 @@ class tree:
 
 		maxPlayer = True if (self.board.player == 0) else False
 		if not maxPlayer: bestEval *= -1
+
+		timeStart = time.perf_counter()
+
 		for x, child in enumerate(self.children):
 			if child.board is None: continue
 			if debug: eval = child.board.evaluate()
@@ -481,7 +539,8 @@ class tree:
 				bestEval = eval
 				bestIndex = x
 
-		print(f"\nComputer selected move: {bestIndex}\n")
+		print(f"\nComputer selected move: {bestIndex + 1}")
+		print(f"({round(time.perf_counter() - timeStart, 4)} seconds)\n")
 
 		self.inherit(bestIndex)
 		if not self.board.moves < self.board.final: raise StopIteration
@@ -533,6 +592,11 @@ class tree:
 				print("ERROR: Invalid entry.")
 				continue
 
+			# Python arrays go backwards
+			if index < 0:
+				print("ERROR: Invalid entry.")
+				continue
+
 			if not self.inherit(index):
 				print("ERROR: Invalid move.")
 				continue
@@ -541,11 +605,37 @@ class tree:
 
 
 if __name__ == "__main__":
-	if len(sys.argv) < 4 or (sys.argv[1] != "interactive" and sys.argv[1] != "one-move"):
-		print(sys.argv)
+	os.system("")		# Workaround for ANSI colors being weird
+	if len(sys.argv) < 2 or (sys.argv[1] != "interactive" and sys.argv[1] != "one-move" and sys.argv[1] != "debug"):
 		print(f"USAGE (interactive mode): {sys.argv[0]} interactive <input file> <computer-next/human-next> <depth>")
 		print(f"      or (one-move mode): {sys.argv[0]} one-move <input file> <output file> <depth>")
 		exit(-1)
+
+	elif len(sys.argv) < 4 and sys.argv[1] == "interactive":
+		print(f"USAGE: {sys.argv[0]} interactive <input file> <computer-next/human-next> <depth>")
+		exit(-1)
+
+	elif len(sys.argv) < 4 and sys.argv[1] == "one-move":
+		print(f"USAGE: {sys.argv[0]} one-move <input file> <output file> <depth>")
+		exit(-1)
+
+	# -- DEBUG MODE --
+	elif sys.argv[1] == "debug":
+		try: MAX_DEPTH = int(sys.argv[2])
+		except (IndexError, ValueError): pass
+
+		init = board(7, 6)
+		game = tree(init)
+		end = False
+
+		print(game.board)
+		while not end:
+			input("Press enter to continue...\n")
+			try: game.advance(False)
+			except StopIteration: end = True
+			print(game.board)
+
+		exit(0)
 
 	# Variables for program arguments
 	mode = (0 if sys.argv[1] == "interactive" else 1)	# 0 -> interactive; 1 -> one-move
@@ -563,7 +653,6 @@ if __name__ == "__main__":
 			print("ERROR: Please specify either 'computer-next' or 'human-next' for interactive mode")
 			exit(-2)
 
-	os.system("")				# Workaround for ANSI colors being weird
 	print("Welcome to Connect-4!\n")
 
 	init = board(7, 6)
@@ -582,7 +671,17 @@ if __name__ == "__main__":
 		input("Press enter to continue...")
 		print("\n")
 
-		game.advance(False)		# False -> Debug mode: OFF
+		# Ensure the game is not already complete
+		try: game.advance(False)		# False -> Debug mode: OFF
+		except IndexError:
+			print("End of game! (No further moves)")
+			score = game.board.score()
+
+			if score[0] > score[1]: print(f"Winner is RED")
+			elif score[1] > score[0]: print(f"Winner is BLUE")
+			else: print("It's a DRAW")
+			exit(0)
+		except StopIteration: pass
 
 		print("NEW POSITION:")
 		print(game.board)
@@ -594,16 +693,16 @@ if __name__ == "__main__":
 	# INTERACTIVE mode
 	else:
 		print(game.board)
-		exit = False
+		end = False
 		human = None
 		if player == 1: human = game.board.player
 		else: human = (game.board.player + 1) % 2
 
-		while not exit:
+		while not end:
 			if player == 0:
 				input("Press enter to continue...\n")
 				try: game.advance(False)
-				except StopIteration: exit = True
+				except StopIteration: end = True
 
 				print(game.board)
 				game.board.output("computer.txt")
@@ -613,7 +712,7 @@ if __name__ == "__main__":
 
 			else:
 				try: game.move()
-				except StopIteration: exit = True
+				except StopIteration: end = True
 
 				print(game.board)
 				game.board.output("human.txt")
